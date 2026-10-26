@@ -1,6 +1,7 @@
 // ============================================
 // Metadata Service - Şarkı Bilgisi Çekme
 // ============================================
+// YouTube oEmbed API ile gerçek video başlığı çekme
 // Tauri ortamında invoke ile çalışır.
 // Web ortamında demo metadata döndürür.
 
@@ -38,12 +39,64 @@ const extractYouTubeId = (url: string): string | null => {
   const patterns = [
     /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
     /youtube\.com\/embed\/([^&\n?#]+)/,
+    /youtube\.com\/shorts\/([^&\n?#]+)/,
   ];
   for (const pattern of patterns) {
     const match = url.match(pattern);
     if (match) return match[1];
   }
   return null;
+};
+
+// YouTube oEmbed API ile gerçek video bilgisi çekme
+const fetchYouTubeMetadata = async (videoId: string): Promise<MetadataResult> => {
+  try {
+    const response = await fetch(
+      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+    );
+    
+    if (!response.ok) {
+      throw new Error('oEmbed fetch failed');
+    }
+
+    const data = await response.json();
+    
+    // Başlığı "Artist - Title" formatında parse et
+    let title = data.title || 'Unknown Title';
+    let artist = data.author_name || 'Unknown Artist';
+    
+    // Eğer başlık "Artist - Title" formatındaysa ayır
+    if (title.includes(' - ')) {
+      const parts = title.split(' - ');
+      if (parts.length >= 2) {
+        artist = parts[0].trim();
+        title = parts.slice(1).join(' - ').trim();
+      }
+    }
+    
+    // Parantez içindeki bilgileri temizle (Official Video, Lyric Video vb.)
+    title = title.replace(/\s*\(.*?(Official|Video|Lyric|Audio|Music|HD|4K).*?\)/gi, '').trim();
+    title = title.replace(/\s*\[.*?(Official|Video|Lyric|Audio|Music|HD|4K).*?\]/gi, '').trim();
+
+    return {
+      success: true,
+      title: title,
+      artist: artist,
+      album: 'YouTube',
+      coverUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+      duration: '3:45', // oEmbed'den süre gelmiyor, placeholder
+    };
+  } catch (err) {
+    console.warn('YouTube oEmbed failed:', err);
+    return {
+      success: true,
+      title: `YouTube Video ${videoId.substring(0, 8)}`,
+      artist: 'Unknown Artist',
+      album: 'YouTube',
+      coverUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+      duration: '3:45',
+    };
+  }
 };
 
 // Demo amaçlı mock metadata üretici
@@ -72,11 +125,6 @@ const generateMockMetadata = (input: string): MetadataResult => {
   };
 };
 
-// YouTube thumbnail URL oluşturma
-const getYouTubeThumbnail = (videoId: string): string => {
-  return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-};
-
 export const fetchMetadata = async (input: string): Promise<MetadataResult> => {
   if (!input || input.trim().length === 0) {
     return { success: false, error: 'Lütfen bir link veya arama metni girin.' };
@@ -92,19 +140,11 @@ export const fetchMetadata = async (input: string): Promise<MetadataResult> => {
     }
   }
 
-  // Web ortamında: YouTube URL ise thumbnail al
+  // Web ortamında: YouTube URL ise oEmbed API ile gerçek başlık çek
   if (isUrl(input) && (input.includes('youtube.com') || input.includes('youtu.be'))) {
     const videoId = extractYouTubeId(input);
     if (videoId) {
-      const seed = videoId.substring(0, 10);
-      return {
-        success: true,
-        title: input.length > 50 ? input.substring(0, 50) + '...' : input,
-        artist: 'YouTube Artist',
-        album: 'YouTube',
-        coverUrl: getYouTubeThumbnail(videoId),
-        duration: `${Math.floor(Math.random() * 5) + 2}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
-      };
+      return await fetchYouTubeMetadata(videoId);
     }
   }
 

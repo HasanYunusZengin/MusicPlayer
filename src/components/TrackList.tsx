@@ -45,12 +45,12 @@ export default function TrackList({ tracks, onInspect, onDelete }: TrackListProp
   return (
     <div className="w-full">
       {/* Table Header */}
-      <div className="grid grid-cols-[40px_1fr_1fr_80px_120px] gap-4 px-4 py-2 border-b border-white/5 text-xs font-medium text-gray-500 uppercase tracking-wider">
+      <div className="grid grid-cols-[40px_1fr_1fr_80px_100px] gap-4 px-4 py-2 border-b border-white/5 text-xs font-medium text-gray-500 uppercase tracking-wider">
         <span>#</span>
         <span>Şarkı</span>
         <span>Albüm</span>
         <span>Süre</span>
-        <span className="text-right">Eylemler</span>
+        <span className="text-right">İşlem</span>
       </div>
 
       {/* Track Rows */}
@@ -58,7 +58,7 @@ export default function TrackList({ tracks, onInspect, onDelete }: TrackListProp
         {tracks.map((track, index) => (
           <div
             key={track.id}
-            className="group grid grid-cols-[40px_1fr_1fr_80px_120px] gap-4 px-4 py-3 items-center hover:bg-white/[0.04] rounded-lg transition-all duration-200"
+            className="group grid grid-cols-[40px_1fr_1fr_80px_100px] gap-4 px-4 py-3 items-center hover:bg-white/[0.04] rounded-lg transition-all duration-200"
           >
             {/* Index / Play icon */}
             <span className="text-sm text-gray-500 group-hover:hidden">
@@ -101,18 +101,21 @@ export default function TrackList({ tracks, onInspect, onDelete }: TrackListProp
               {track.duration}
             </span>
 
-            {/* Actions */}
+            {/* Actions - Minimalist info icon */}
             <div className="flex items-center justify-end gap-1">
               <button
                 onClick={() => onInspect(track)}
-                className="px-3 py-1.5 rounded-full text-xs font-medium bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 hover:text-purple-200 transition-all duration-200 border border-purple-500/20"
+                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 transition-all duration-200"
                 title="3D CD Kutusunu İncele"
               >
-                💿 İncele
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4M12 8h.01" />
+                </svg>
               </button>
               <button
                 onClick={() => onDelete(track.id)}
-                className="px-2 py-1.5 rounded-full text-xs text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
                 title="Sil"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
