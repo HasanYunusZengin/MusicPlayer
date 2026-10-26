@@ -64,10 +64,10 @@ function useCircularCdTexture(coverUrl: string): THREE.Texture {
       ctx.drawImage(src, sx, sy, size, size, 0, 0, 512, 512);
     }
 
-    // Merkez delik (transparent)
+    // Merkez delik (transparent) - büyütülmüş (0.25 radius)
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(256, 256, 40, 0, Math.PI * 2);
+    ctx.arc(256, 256, 53, 0, Math.PI * 2);
     ctx.fill();
 
     const texture = new THREE.CanvasTexture(canvas);
@@ -132,9 +132,9 @@ function CdDisc({
           onClick?.();
         }}
       >
-        {/* CD Body - Metalik disk */}
+        {/* CD Body - Metalik disk (ortası delik) */}
         <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[1.2, 1.2, 0.02, 64]} />
+          <ringGeometry args={[0.25, 1.2, 64]} />
           <meshPhysicalMaterial
             color="#c8c8c8"
             metalness={0.95}
@@ -142,12 +142,13 @@ function CdDisc({
             clearcoat={1}
             clearcoatRoughness={0.05}
             envMapIntensity={2.5}
+            side={THREE.DoubleSide}
           />
         </mesh>
 
-        {/* CD Label - Dairesel maskeleme ile albüm kapağı (ön yüz) */}
+        {/* CD Label - Dairesel maskeleme ile albüm kapağı (ön yüz, ortası delik) */}
         <mesh rotation={[0, 0, 0]} position={[0, 0, 0.011]}>
-          <circleGeometry args={[1.15, 64]} />
+          <ringGeometry args={[0.25, 1.15, 64]} />
           <meshStandardMaterial
             map={circularTexture}
             side={THREE.FrontSide}
@@ -155,9 +156,9 @@ function CdDisc({
           />
         </mesh>
 
-        {/* CD Label - Arka yüz */}
+        {/* CD Label - Arka yüz (ortası delik) */}
         <mesh rotation={[0, Math.PI, 0]} position={[0, 0, -0.011]}>
-          <circleGeometry args={[1.15, 64]} />
+          <ringGeometry args={[0.25, 1.15, 64]} />
           <meshStandardMaterial
             map={circularTexture}
             side={THREE.FrontSide}
@@ -171,9 +172,9 @@ function CdDisc({
           <meshStandardMaterial color="#999" metalness={0.9} roughness={0.1} />
         </mesh>
 
-        {/* Merkez delik halkası */}
+        {/* Merkez delik halkası (büyütülmüş) */}
         <mesh rotation={[0, 0, 0]}>
-          <torusGeometry args={[0.12, 0.025, 16, 32]} />
+          <torusGeometry args={[0.25, 0.03, 16, 32]} />
           <meshStandardMaterial color="#666" metalness={0.9} roughness={0.1} />
         </mesh>
       </group>
@@ -390,15 +391,15 @@ export default function CdModal3D({ track, onClose }: CdModal3DProps) {
     requestAnimationFrame(() => setIsVisible(true));
   }, []);
 
-  // ESC handler
+  // ESC handler - 2 aşamalı navigasyon
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (viewMode === 'focused') {
+          // CD inceleme modundaysa → CD kutusuna geri dön (modal kapanmaz)
           setViewMode('open');
-        } else if (viewMode === 'open') {
-          setViewMode('closed');
         } else {
+          // CD kutusu modundaysa → modalı kapat
           onClose();
         }
       }
@@ -438,9 +439,9 @@ export default function CdModal3D({ track, onClose }: CdModal3DProps) {
       case 'closed':
         return 'Kutuya çift tıkla: Kapak aç • Scroll: Yakınlaş/Uzaklaş';
       case 'open':
-        return 'CD diske tıkla: İncele • Sürükle: Döndür • Scroll: Zoom';
+        return 'CD diske tıkla: İncele • Sürükle: Döndür • ESC: Kapat';
       case 'focused':
-        return 'Sürükle: Döndür • Scroll: Zoom • ESC: Geri';
+        return 'Sürükle: Döndür • Scroll: Zoom • ESC: Kutuya Dön';
     }
   }, [viewMode]);
 
@@ -487,7 +488,7 @@ export default function CdModal3D({ track, onClose }: CdModal3DProps) {
         <div className="flex-1 w-full h-full">
           <Suspense fallback={<LoadingOverlay />}>
             <Canvas
-              camera={{ position: [0, 0, 7], fov: 50 }}
+              camera={{ position: [0, 0, 6.5], fov: 50 }}
               gl={{ antialias: true, alpha: true }}
               style={{ background: 'transparent' }}
             >
