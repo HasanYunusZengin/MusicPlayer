@@ -4,7 +4,7 @@
 // 3D CD Media Player - Spotify Tarzı Arayüz
 // ============================================
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { Track } from './types';
 import { downloadTrack } from './services/downloadService';
 import TrackList from './components/TrackList';
@@ -101,6 +101,17 @@ export default function App() {
   const handleCloseModal = useCallback(() => {
     setSelectedTrack(null);
   }, []);
+
+  // Global ESC handler - Modal açıkken ESC ile kapat
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedTrack) {
+        handleCloseModal();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [selectedTrack, handleCloseModal]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !isDownloading) {
