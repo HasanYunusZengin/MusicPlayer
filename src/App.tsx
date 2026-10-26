@@ -1,8 +1,8 @@
 // ============================================
 // App.tsx - Ana Uygulama Bileşeni
 // ============================================
-// 3D CD Media Player - Spotify Tarzı Arayüz
-// Sidebar, tema sistemi ve modern layout
+// Yourplayer - 3D CD Media Player
+// Sadeleştirilmiş: Tek playlist, tema sistemi
 // ============================================
 
 import { useState, useCallback, useEffect } from 'react';
@@ -72,24 +72,18 @@ const DEMO_TRACKS: Track[] = [
 ];
 
 // Tema renk paletleri
-const THEME_STYLES: Record<Theme, { bg: string; sidebar: string; accent: string; text: string }> = {
+const THEME_STYLES: Record<Theme, { bg: string; accent: string }> = {
   dark: {
     bg: 'bg-[#121212]',
-    sidebar: 'bg-black/40',
     accent: 'from-purple-600 to-indigo-600',
-    text: 'text-white',
   },
   light: {
     bg: 'bg-[#f5f5f5]',
-    sidebar: 'bg-white/80',
     accent: 'from-blue-500 to-cyan-500',
-    text: 'text-gray-900',
   },
   cyberpunk: {
     bg: 'bg-[#0a0015]',
-    sidebar: 'bg-purple-950/40',
     accent: 'from-pink-500 to-cyan-400',
-    text: 'text-white',
   },
 };
 
@@ -101,9 +95,11 @@ export default function App() {
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [currentTheme, setCurrentTheme] = useState<Theme>('dark');
-  const [activeSection, setActiveSection] = useState('home');
+  const [activePlaylist] = useState('playlist-1'); // Tek playlist, her zaman seçili
 
   const themeStyle = THEME_STYLES[currentTheme];
+  const isLight = currentTheme === 'light';
+  const isCyberpunk = currentTheme === 'cyberpunk';
 
   const showNotification = useCallback((message: string, type: 'success' | 'error') => {
     setNotification({ message, type });
@@ -173,16 +169,12 @@ export default function App() {
     setCurrentTheme(theme);
   }, []);
 
-  const handleNavigate = useCallback((section: string) => {
-    setActiveSection(section);
+  const handlePlaylistSelect = useCallback((_playlistId: string) => {
+    // Tek playlist olduğu için no-op, ama ileride genişletilebilir
   }, []);
 
-  // Tema bazlı arka plan ve text renkleri
-  const isLight = currentTheme === 'light';
-  const isCyberpunk = currentTheme === 'cyberpunk';
-
   return (
-    <div className={`h-screen w-screen flex overflow-hidden ${themeStyle.bg} ${themeStyle.text} transition-colors duration-500`}>
+    <div className={`h-screen w-screen flex overflow-hidden ${themeStyle.bg} ${isLight ? 'text-gray-900' : 'text-white'} transition-colors duration-500`}>
       {/* Notification Toast */}
       {notification && (
         <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-xl border transition-all duration-300 animate-slide-in ${
@@ -198,8 +190,8 @@ export default function App() {
       <Sidebar
         currentTheme={currentTheme}
         onThemeChange={handleThemeChange}
-        onNavigate={handleNavigate}
-        activeSection={activeSection}
+        activePlaylist={activePlaylist}
+        onPlaylistSelect={handlePlaylistSelect}
       />
 
       {/* Main Content Area */}
@@ -282,9 +274,7 @@ export default function App() {
           <div className="max-w-5xl mx-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className={`text-sm font-semibold uppercase tracking-wider ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
-                {activeSection === 'home' ? 'Koleksiyonum' : 
-                 activeSection === 'browse' ? 'Gözat' :
-                 activeSection === 'playlists' ? 'Çalma Listeleri' : 'Kitaplığın'}
+                1. Playlist
               </h2>
               {tracks.length > 0 && (
                 <span className={`text-xs ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
