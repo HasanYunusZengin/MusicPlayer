@@ -4,13 +4,14 @@
 // 3-State Interaction:
 //   1. 'closed'  → Kapak kapalı, CD kutusu tam görünür
 //   2. 'open'    → Kapak açılmış (120°), CD disk görünüyor
-//   3. 'focused' → CD disk kutudan çıkıp odaklanmış, kutu arkada blur
+//   3. 'focused' → CD disk tek başına odaklanmış, kutu GÖRÜNMEZ
 //
 // Kontroller:
 //   - Kutuya ÇİFT TIKLA → kapak açılır
-//   - CD diske TEK TIKLA → disk odaklanır
+//   - CD diske TEK TIKLA → disk odaklanır (case kaybolur)
 //   - ESC → geri adım veya kapat
 //   - Boş alana tıkla → kapat
+//   - Scroll → Zoom in/out
 
 import { useRef, useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -26,19 +27,58 @@ interface CdModal3DProps {
 type ViewMode = 'closed' | 'open' | 'focused';
 
 // ============================================
-// Texture Loader
+// Dairesel CD Texture Oluşturucu
+// Albüm kapağını dairesel olarak maskeler
 // ============================================
-function useAlbumTexture(coverUrl: string): THREE.Texture {
+function useCircularCdTexture(coverUrl: string): THREE.Texture {
   return useMemo(() => {
     const loader = new THREE.TextureLoader();
-    const tex = loader.load(coverUrl);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
+    const image = loader.load(coverUrl);
+    image.colorSpace = THREE.SRGBColorSpace;
+
+    // Canvas ile dairesel maskeleme
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) return image;
+
+    // Dairesel clip
+    ctx.beginPath();
+    ctx.arc(256, 256, 256, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+
+    // Resmi çiz (center crop)
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = coverUrl;
+    
+    // Eğer resim zaten yüklenmişse hemen çiz
+    if (image.image) {
+      const src = image.image as HTMLImageElement;
+      const size = Math.min(src.width, src.height);
+      const sx = (src.width - size) / 2;
+      const sy = (src.height - size) / 2;
+      ctx.drawImage(src, sx, sy, size, size, 0, 0, 512, 512);
+    }
+
+    // Merkez delik (transparent)
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(256, 256, 40, 0, Math.PI * 2);
+    ctx.fill();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
   }, [coverUrl]);
 }
 
 // ============================================
-// CD Disc - 3D Dönen Disk (DİKEY - Kutuya Paralel)
+// CD Disc - 3D Dönen Disk (DAİRESEL TEXTURE)
 // ============================================
 function CdDisc({
   coverUrl,
@@ -53,7 +93,7 @@ function CdDisc({
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const discGroupRef = useRef<THREE.Group>(null);
-  const texture = useAlbumTexture(coverUrl);
+  const circularTexture = useCircularCdTexture(coverUrl);
 
   // Focus animasyonu
   const targetPos = useRef(new THREE.Vector3(...position));
@@ -61,8 +101,8 @@ function CdDisc({
 
   useEffect(() => {
     if (isFocused) {
-      targetPos.current.set(0, 0, 2); // CD öne geliyor
-      targetScale.current = 1.5;
+      targetPos.current.set(0, 0, 0); // CD tam ortada
+      targetScale.current = 1.8;
     } else {
       targetPos.current.set(...position);
       targetScale.current = 1;
@@ -77,7 +117,7 @@ function CdDisc({
       const ns = s + (ts - s) * delta * 4;
       groupRef.current.scale.setScalar(ns);
     }
-    // Disk yavaşça döner (sadece focused modda belirgin) - Z ekseni etrafında
+    // Disk yavaşça döner (sadece focused modda belirgin)
     if (discGroupRef.current && isFocused) {
       discGroupRef.current.rotation.z += delta * 0.3;
     }
@@ -92,11 +132,11 @@ function CdDisc({
           onClick?.();
         }}
       >
-        {/* CD Body - DİKEY (rotation={[Math.PI/2, 0, 0]} ile XY düzleminde) */}
+        {/* CD Body - Metalik disk */}
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[1.2, 1.2, 0.02, 64]} />
           <meshPhysicalMaterial
-            color="#d0d0d0"
+            color="#c8c8c8"
             metalness={0.95}
             roughness={0.05}
             clearcoat={1}
@@ -105,22 +145,36 @@ function CdDisc({
           />
         </mesh>
 
-        {/* CD Label (Album Art) - Front face (XY düzleminde, Z pozitif yön) */}
+        {/* CD Label - Dairesel maskeleme ile albüm kapağı (ön yüz) */}
         <mesh rotation={[0, 0, 0]} position={[0, 0, 0.011]}>
-          <planeGeometry args={[2.2, 2.2]} />
-          <meshStandardMaterial map={texture} side={THREE.FrontSide} transparent />
+          <circleGeometry args={[1.15, 64]} />
+          <meshStandardMaterial
+            map={circularTexture}
+            side={THREE.FrontSide}
+            transparent
+          />
         </mesh>
 
-        {/* CD Label - Back face (XY düzleminde, Z negatif yön) */}
+        {/* CD Label - Arka yüz */}
         <mesh rotation={[0, Math.PI, 0]} position={[0, 0, -0.011]}>
-          <planeGeometry args={[2.2, 2.2]} />
-          <meshStandardMaterial map={texture} side={THREE.FrontSide} transparent />
+          <circleGeometry args={[1.15, 64]} />
+          <meshStandardMaterial
+            map={circularTexture}
+            side={THREE.FrontSide}
+            transparent
+          />
         </mesh>
 
-        {/* Center hole ring - Dikey (XY düzleminde) */}
+        {/* CD kenar halkası */}
         <mesh rotation={[0, 0, 0]}>
-          <torusGeometry args={[0.15, 0.03, 16, 32]} />
-          <meshStandardMaterial color="#888" metalness={0.9} roughness={0.1} />
+          <torusGeometry args={[1.18, 0.02, 16, 64]} />
+          <meshStandardMaterial color="#999" metalness={0.9} roughness={0.1} />
+        </mesh>
+
+        {/* Merkez delik halkası */}
+        <mesh rotation={[0, 0, 0]}>
+          <torusGeometry args={[0.12, 0.025, 16, 32]} />
+          <meshStandardMaterial color="#666" metalness={0.9} roughness={0.1} />
         </mesh>
       </group>
     </group>
@@ -133,39 +187,33 @@ function CdDisc({
 function JewelCase({
   coverUrl,
   isOpen,
-  isBlurred,
   onCaseDoubleClick,
   onDiscClick,
 }: {
   coverUrl: string;
   isOpen: boolean;
-  isBlurred: boolean;
   onCaseDoubleClick: () => void;
   onDiscClick: () => void;
 }) {
   const coverRef = useRef<THREE.Group>(null);
-  const caseRef = useRef<THREE.Group>(null);
-  const texture = useAlbumTexture(coverUrl);
-  const targetAngle = isOpen ? -Math.PI * 0.66 : 0; // 120 degrees
-  const targetCaseZ = isBlurred ? -2 : 0; // Kutu geriye çekiliyor
-  const targetCaseOpacity = isBlurred ? 0.3 : 1;
+  const texture = useMemo(() => {
+    const loader = new THREE.TextureLoader();
+    const tex = loader.load(coverUrl);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, [coverUrl]);
+  const targetAngle = isOpen ? -Math.PI * 0.66 : 0;
 
   useFrame((_, delta) => {
-    // Kapak açılma animasyonu
     if (coverRef.current) {
       const current = coverRef.current.rotation.y;
       const diff = targetAngle - current;
       coverRef.current.rotation.y += diff * delta * 4;
     }
-    // Kutu geri çekilme animasyonu
-    if (caseRef.current) {
-      caseRef.current.position.z += (targetCaseZ - caseRef.current.position.z) * delta * 4;
-    }
   });
 
   return (
     <group
-      ref={caseRef}
       rotation={[0.1, 0, 0]}
       onDoubleClick={(e) => {
         e.stopPropagation();
@@ -182,7 +230,7 @@ function JewelCase({
           metalness={0.1}
           roughness={0.3}
           transparent
-          opacity={targetCaseOpacity * 0.9}
+          opacity={0.9}
         />
       </mesh>
 
@@ -192,7 +240,7 @@ function JewelCase({
         <meshPhysicalMaterial
           color="#ffffff"
           transparent
-          opacity={targetCaseOpacity * 0.3}
+          opacity={0.3}
           roughness={0.1}
           metalness={0.1}
           transmission={0.6}
@@ -208,7 +256,7 @@ function JewelCase({
             <meshPhysicalMaterial
               color="#ffffff"
               transparent
-              opacity={targetCaseOpacity * 0.15}
+              opacity={0.15}
               roughness={0.05}
               metalness={0.0}
               transmission={0.8}
@@ -220,12 +268,7 @@ function JewelCase({
           {/* Albüm kapağı */}
           <mesh position={[0, 0, 0.18]}>
             <planeGeometry args={[2.4, 2.4]} />
-            <meshStandardMaterial
-              map={texture}
-              side={THREE.FrontSide}
-              transparent
-              opacity={targetCaseOpacity}
-            />
+            <meshStandardMaterial map={texture} side={THREE.FrontSide} />
           </mesh>
         </group>
       </group>
@@ -233,25 +276,13 @@ function JewelCase({
       {/* CD Tray */}
       <mesh position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[1.25, 1.25, 0.02, 64]} />
-        <meshStandardMaterial
-          color="#222"
-          metalness={0.5}
-          roughness={0.4}
-          transparent
-          opacity={targetCaseOpacity}
-        />
+        <meshStandardMaterial color="#222" metalness={0.5} roughness={0.4} />
       </mesh>
 
       {/* Center spindle */}
       <mesh position={[0, 0, 0.02]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.1, 0.1, 0.08, 32]} />
-        <meshStandardMaterial
-          color="#444"
-          metalness={0.8}
-          roughness={0.2}
-          transparent
-          opacity={targetCaseOpacity}
-        />
+        <meshStandardMaterial color="#444" metalness={0.8} roughness={0.2} />
       </mesh>
 
       {/* CD inside the case (visible when open) */}
@@ -283,7 +314,6 @@ function Scene({
 }) {
   const isOpen = viewMode === 'open' || viewMode === 'focused';
   const isFocused = viewMode === 'focused';
-  const isBlurred = viewMode === 'focused';
 
   return (
     <>
@@ -300,44 +330,33 @@ function Scene({
         color="#a78bfa"
       />
 
-      {/* Case + Disc */}
+      {/* Case + Disc - Focused modda case GÖRÜNMEZ */}
       {!isFocused ? (
         <JewelCase
           coverUrl={track.coverUrl}
           isOpen={isOpen}
-          isBlurred={isBlurred}
           onCaseDoubleClick={onCaseDoubleClick}
           onDiscClick={onDiscClick}
         />
       ) : (
-        <>
-          {/* Blurred case in background */}
-          <JewelCase
-            coverUrl={track.coverUrl}
-            isOpen={isOpen}
-            isBlurred={true}
-            onCaseDoubleClick={() => {}}
-            onDiscClick={() => {}}
-          />
-          {/* Focused disc in foreground */}
-          <CdDisc
-            coverUrl={track.coverUrl}
-            position={[0, 0, 0.03]}
-            onClick={() => {}}
-            isFocused={true}
-          />
-        </>
+        /* Sadece CD diski - Case tamamen yok */
+        <CdDisc
+          coverUrl={track.coverUrl}
+          position={[0, 0, 0]}
+          onClick={() => {}}
+          isFocused={true}
+        />
       )}
 
-      {/* Controls - Only enable orbit when disc is focused */}
+      {/* OrbitControls - Her zaman aktif, zoom enabled */}
       <OrbitControls
         enablePan={false}
         enableZoom={true}
         minDistance={isFocused ? 1.5 : 3}
-        maxDistance={isFocused ? 5 : 8}
+        maxDistance={isFocused ? 6 : 12}
         autoRotate={false}
-        enabled={isFocused}
-        target={isFocused ? [0, 0, 2] : [0, 0, 0]}
+        zoomSpeed={0.8}
+        rotateSpeed={0.8}
       />
 
       <Environment preset="studio" />
@@ -346,7 +365,7 @@ function Scene({
 }
 
 // ============================================
-// CSS Loading Spinner (no torus mesh)
+// CSS Loading Spinner
 // ============================================
 function LoadingOverlay() {
   return (
@@ -371,7 +390,7 @@ export default function CdModal3D({ track, onClose }: CdModal3DProps) {
     requestAnimationFrame(() => setIsVisible(true));
   }, []);
 
-  // ESC handler - geri adım veya kapat
+  // ESC handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -395,14 +414,14 @@ export default function CdModal3D({ track, onClose }: CdModal3DProps) {
     }
   }, [viewMode]);
 
-  // CD diske TEK TIKLAMA → disk odakla
+  // CD diske TEK TIKLAMA → disk odakla (case kaybolur)
   const handleDiscClick = useCallback(() => {
     if (viewMode === 'open') {
       setViewMode('focused');
     }
   }, [viewMode]);
 
-  // Boş alana tıklama → kapat
+  // Boş alana tıklama
   const handleBackdropClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       if (viewMode === 'focused') {
@@ -413,15 +432,15 @@ export default function CdModal3D({ track, onClose }: CdModal3DProps) {
     }
   }, [viewMode, onClose]);
 
-  // Hint text based on view mode
+  // Hint text
   const hintText = useMemo(() => {
     switch (viewMode) {
       case 'closed':
-        return 'Kutuya çift tıkla: Kapak aç';
+        return 'Kutuya çift tıkla: Kapak aç • Scroll: Yakınlaş/Uzaklaş';
       case 'open':
-        return 'CD diske tıkla: İncele';
+        return 'CD diske tıkla: İncele • Sürükle: Döndür • Scroll: Zoom';
       case 'focused':
-        return 'Sürükle: Döndür • ESC: Geri';
+        return 'Sürükle: Döndür • Scroll: Zoom • ESC: Geri';
     }
   }, [viewMode]);
 

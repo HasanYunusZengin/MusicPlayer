@@ -1,7 +1,7 @@
 // ============================================
 // Metadata Service - Şarkı Bilgisi Çekme
 // ============================================
-// YouTube noembed API ile gerçek video başlığı ve süre çekme
+// YouTube noembed API ve Spotify oEmbed ile gerçek metadata çekme
 // Tauri ortamında invoke ile çalışır.
 // Web ortamında demo metadata döndürür.
 
@@ -48,18 +48,22 @@ const extractYouTubeId = (url: string): string | null => {
   return null;
 };
 
+// Spotify linkinden track ID çıkarma
+const extractSpotifyId = (url: string): string | null => {
+  const match = url.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
+  return match ? match[1] : null;
+};
+
 // Video ID'den deterministik süre üretme (her video için farklı ama tutarlı)
 const generateDurationFromId = (videoId: string): string => {
-  // Video ID'den hash değeri oluştur
   let hash = 0;
   for (let i = 0; i < videoId.length; i++) {
     const char = videoId.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // 32-bit integer'a çevir
+    hash = hash & hash;
   }
   
-  // Hash'ten dakika ve saniye üret (2:00 - 8:59 arası)
-  const totalSeconds = Math.abs(hash % 420) + 120; // 120-539 saniye (2:00-8:59)
+  const totalSeconds = Math.abs(hash % 420) + 120;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   
@@ -69,7 +73,6 @@ const generateDurationFromId = (videoId: string): string => {
 // YouTube noembed API ile gerçek video bilgisi çekme
 const fetchYouTubeMetadata = async (videoId: string): Promise<MetadataResult> => {
   try {
-    // noembed.com API - CORS friendly, API key gerektirmez
     const response = await fetch(
       `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`
     );
@@ -80,11 +83,9 @@ const fetchYouTubeMetadata = async (videoId: string): Promise<MetadataResult> =>
 
     const data = await response.json();
     
-    // Başlığı "Artist - Title" formatında parse et
     let title = data.title || 'Unknown Title';
     let artist = data.author_name || 'Unknown Artist';
     
-    // Eğer başlık "Artist - Title" formatındaysa ayır
     if (title.includes(' - ')) {
       const parts = title.split(' - ');
       if (parts.length >= 2) {
@@ -93,11 +94,9 @@ const fetchYouTubeMetadata = async (videoId: string): Promise<MetadataResult> =>
       }
     }
     
-    // Parantez içindeki bilgileri temizle (Official Video, Lyric Video vb.)
     title = title.replace(/\s*\(.*?(Official|Video|Lyric|Audio|Music|HD|4K).*?\)/gi, '').trim();
     title = title.replace(/\s*\[.*?(Official|Video|Lyric|Audio|Music|HD|4K).*?\]/gi, '').trim();
 
-    // Video ID'den deterministik süre üret
     const duration = generateDurationFromId(videoId);
 
     return {
@@ -121,6 +120,53 @@ const fetchYouTubeMetadata = async (videoId: string): Promise<MetadataResult> =>
   }
 };
 
+// Spotify oEmbed API ile track bilgisi çekme
+const fetchSpotifyMetadata = async (trackId: string): Promise<MetadataResult> => {
+  try {
+    const response = await fetch(
+      `https://open.spotify.com/oembed?url=https://open.spotify.com/track/${trackId}`
+    );
+    
+    if (!response.ok) {
+      throw new Error('Spotify oEmbed fetch failed');
+    }
+
+    const data = await response.json();
+    
+    // Spotify oEmbed formatı: "Artist - Title" veya sadece "Title"
+    let title = data.title || 'Unknown Title';
+    let artist = 'Unknown Artist';
+    
+    // Başlığı parse et
+    if (title.includes(' - ')) {
+      const parts = title.split(' - ');
+      if (parts.length >= 2) {
+        artist = parts[0].trim();
+        title = parts.slice(1).join(' - ').trim();
+      }
+    }
+
+    return {
+      success: true,
+      title: title,
+      artist: artist,
+      album: 'Spotify',
+      coverUrl: data.thumbnail_url || `https://i.scdn.co/image/${trackId}`,
+      duration: generateDurationFromId(trackId),
+    };
+  } catch (err) {
+    console.warn('Spotify oEmbed failed:', err);
+    return {
+      success: true,
+      title: `Spotify Track ${trackId.substring(0, 8)}`,
+      artist: 'Unknown Artist',
+      album: 'Spotify',
+      coverUrl: `https://i.scdn.co/image/${trackId}`,
+      duration: generateDurationFromId(trackId),
+    };
+  }
+};
+
 // Demo amaçlı mock metadata üretici
 const generateMockMetadata = (input: string): MetadataResult => {
   const mockArtists = [
@@ -137,7 +183,6 @@ const generateMockMetadata = (input: string): MetadataResult => {
   const randomIndex = Math.floor(Math.random() * mockArtists.length);
   const seed = input.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20) || 'song';
   
-  // Input'tan deterministik süre üret
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
     const char = input.charCodeAt(i);
@@ -159,6 +204,14 @@ const generateMockMetadata = (input: string): MetadataResult => {
   };
 };
 
+// Spotify linkini yt-dlp sorgusuna dönüştür
+export const convertSpotifyToSearchQuery = (spotifyUrl: string, metadata: MetadataResult): string => {
+  if (metadata.success && metadata.title && metadata.artist) {
+    return `ytsearch1:${metadata.artist} ${metadata.title}`;
+  }
+  return spotifyUrl;
+};
+
 export const fetchMetadata = async (input: string): Promise<MetadataResult> => {
   if (!input || input.trim().length === 0) {
     return { success: false, error: 'Lütfen bir link veya arama metni girin.' };
@@ -174,11 +227,19 @@ export const fetchMetadata = async (input: string): Promise<MetadataResult> => {
     }
   }
 
-  // Web ortamında: YouTube URL ise noembed API ile gerçek başlık ve süre çek
+  // YouTube URL
   if (isUrl(input) && (input.includes('youtube.com') || input.includes('youtu.be'))) {
     const videoId = extractYouTubeId(input);
     if (videoId) {
       return await fetchYouTubeMetadata(videoId);
+    }
+  }
+
+  // Spotify URL
+  if (isUrl(input) && input.includes('open.spotify.com')) {
+    const trackId = extractSpotifyId(input);
+    if (trackId) {
+      return await fetchSpotifyMetadata(trackId);
     }
   }
 

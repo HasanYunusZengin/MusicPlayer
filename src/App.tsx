@@ -304,14 +304,6 @@ export default function App() {
                 </div>
               )}
             </button>
-
-            {/* Status indicator */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
-              isLight ? 'bg-gray-100 border border-gray-200' : 'bg-white/5 border border-white/10'
-            }`}>
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>yt-dlp Ready</span>
-            </div>
           </div>
 
           {/* Progress bar */}

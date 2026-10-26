@@ -81,11 +81,11 @@ export default function TrackList({ tracks, onInspect, onDelete }: TrackListProp
                   }}
                 />
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-white truncate">
+              <div className="min-w-0 text-left">
+                <p className="text-sm font-medium text-white truncate text-left">
                   {track.title}
                 </p>
-                <p className="text-xs text-gray-400 truncate">
+                <p className="text-xs text-gray-400 truncate text-left">
                   {track.artist}
                 </p>
               </div>

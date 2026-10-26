@@ -3,10 +3,11 @@
 // ============================================
 // Tauri ortamında invoke ile yt-dlp çalıştırır.
 // Web ortamında simüle edilmiş indirme yapar.
+// Spotify linkleri otomatik olarak ytsearch1 sorgusuna dönüştürülür.
 
 import { v4 as uuidv4 } from 'uuid';
 import type { Track, DownloadResult } from '../types';
-import { fetchMetadata } from './metadataService';
+import { fetchMetadata, convertSpotifyToSearchQuery } from './metadataService';
 import { sanitizeFilename } from './platformService';
 
 declare global {
@@ -28,6 +29,16 @@ const tauriInvoke = async <T>(cmd: string, args?: Record<string, unknown>): Prom
   return window.__TAURI__.invoke(cmd, args) as Promise<T>;
 };
 
+// Spotify linki mi kontrol et
+const isSpotifyUrl = (input: string): boolean => {
+  try {
+    const url = new URL(input);
+    return url.hostname.includes('open.spotify.com');
+  } catch {
+    return false;
+  }
+};
+
 export const downloadTrack = async (
   input: string,
   onProgress?: (progress: number) => void
@@ -38,11 +49,27 @@ export const downloadTrack = async (
 
   if (isTauri()) {
     try {
+      // Önce metadata çek
+      const metadata = await fetchMetadata(input.trim());
+      
+      // Spotify linki ise, yt-dlp'ye arama sorgusu gönder
+      let downloadInput = input.trim();
+      if (isSpotifyUrl(input.trim()) && metadata.success) {
+        downloadInput = convertSpotifyToSearchQuery(input.trim(), metadata);
+      }
+
       const result = await tauriInvoke<DownloadResult>('download_track', {
-        input: input.trim(),
+        input: downloadInput,
       });
 
       if (result.success && result.track) {
+        // Spotify ise, metadata'dan gelen bilgileri kullan
+        if (isSpotifyUrl(input.trim()) && metadata.success) {
+          result.track.title = metadata.title || result.track.title;
+          result.track.artist = metadata.artist || result.track.artist;
+          result.track.coverUrl = metadata.coverUrl || result.track.coverUrl;
+          result.track.duration = metadata.duration || result.track.duration;
+        }
         return result;
       }
       return { success: false, error: result.error || 'İndirme başarısız.' };
@@ -72,6 +99,7 @@ const simulateDownload = async (
     return { success: false, error: metadata.error || 'Metadata alınamadı.' };
   }
 
+  // Spotify linki ise, gerçek metadata bilgilerini kullan
   const track: Track = {
     id: uuidv4(),
     title: metadata.title || 'Unknown Title',
