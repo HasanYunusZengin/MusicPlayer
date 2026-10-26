@@ -5,15 +5,13 @@
 //   Aşama 1 (closed/open): CD Kutusu görünür, 360° döndürülebilir
 //   Aşama 2 (focused): Sadece CD diski görünür, bağımsız döndürülebilir
 //
-// Kontroller:
-//   - Kutuya ÇİFT TIKLA → kapak açılır (sol menteşeden)
-//   - CD diske TEK TIKLA → disk odaklanır (kutu kaybolur)
-//   - ESC → kademeli çıkış (focused → open → kapat)
-//   - Scroll → Zoom in/out
-//   - Sürükle → 360° döndür
+// Performans Optimizasyonları:
+//   - Texture preloading (modal açıldığında önceden yükle)
+//   - Smooth kapak animasyonu (lerp ile 60 FPS)
+//   - CD ortasında gerçek şeffaf delik (RingGeometry)
 
 import { useRef, useState, useEffect, useMemo, Suspense, useCallback } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Track } from '../types';
@@ -26,9 +24,26 @@ interface CdModal3DProps {
 type ViewMode = 'closed' | 'open' | 'focused';
 
 // ============================================
+// Texture Preloader - Modal açıldığında tüm texture'ları yükle
+// ============================================
+function TexturePreloader({ coverUrl }: { coverUrl: string }) {
+  // useLoader ile texture'ı önceden yükle (Suspense ile senkron)
+  const texture = useLoader(THREE.TextureLoader, coverUrl);
+  
+  useEffect(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+  }, [texture]);
+
+  return null; // Render etme, sadece yükle
+}
+
+// ============================================
 // Dairesel CD Texture (Canvas ile Maskeleme)
 // ============================================
 function useCircularCdTexture(coverUrl: string): THREE.Texture {
+  const baseTexture = useLoader(THREE.TextureLoader, coverUrl);
+  
   return useMemo(() => {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -36,8 +51,7 @@ function useCircularCdTexture(coverUrl: string): THREE.Texture {
     const ctx = canvas.getContext('2d');
     
     if (!ctx) {
-      const fallback = new THREE.Texture();
-      return fallback;
+      return baseTexture;
     }
 
     // Dairesel clip
@@ -46,33 +60,30 @@ function useCircularCdTexture(coverUrl: string): THREE.Texture {
     ctx.closePath();
     ctx.clip();
 
-    // Resmi yükle ve çiz
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
+    // Resmi çiz
+    if (baseTexture.image) {
+      const img = baseTexture.image as HTMLImageElement;
       const size = Math.min(img.width, img.height);
       const sx = (img.width - size) / 2;
       const sy = (img.height - size) / 2;
       ctx.drawImage(img, sx, sy, size, size, 0, 0, 512, 512);
-      
-      // Merkez delik (şeffaf)
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.beginPath();
-      ctx.arc(256, 256, 50, 0, Math.PI * 2);
-      ctx.fill();
-      
-      texture.needsUpdate = true;
-    };
-    img.src = coverUrl;
+    }
+
+    // Merkez delik (şeffaf) - CD standartlarına uygun
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(256, 256, 50, 0, Math.PI * 2);
+    ctx.fill();
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
     return texture;
-  }, [coverUrl]);
+  }, [baseTexture]);
 }
 
 // ============================================
-// CD Disc - 3D Disk (DİKEY, STATİK)
+// CD Disc - 3D Disk (ORTASI DELİK, DİKEY)
 // ============================================
 function CdDisc({
   coverUrl,
@@ -93,21 +104,22 @@ function CdDisc({
           onClick?.();
         }}
       >
-        {/* CD Body - İnce silindir (dikey) */}
+        {/* CD Body - RingGeometry ile ortası delik */}
         <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[1.2, 1.2, 0.02, 64]} />
+          <ringGeometry args={[0.15, 1.2, 64]} />
           <meshPhysicalMaterial
             color="#d0d0d0"
             metalness={0.9}
             roughness={0.1}
             clearcoat={0.8}
             clearcoatRoughness={0.1}
+            side={THREE.DoubleSide}
           />
         </mesh>
 
-        {/* CD Label - Ön yüz (dairesel texture) */}
+        {/* CD Label - Ön yüz (dairesel texture, ortası delik) */}
         <mesh position={[0, 0, 0.011]}>
-          <circleGeometry args={[1.15, 64]} />
+          <ringGeometry args={[0.15, 1.15, 64]} />
           <meshStandardMaterial
             map={circularTexture}
             side={THREE.FrontSide}
@@ -117,7 +129,7 @@ function CdDisc({
 
         {/* CD Label - Arka yüz */}
         <mesh rotation={[0, Math.PI, 0]} position={[0, 0, -0.011]}>
-          <circleGeometry args={[1.15, 64]} />
+          <ringGeometry args={[0.15, 1.15, 64]} />
           <meshStandardMaterial
             map={circularTexture}
             side={THREE.FrontSide}
@@ -130,7 +142,7 @@ function CdDisc({
 }
 
 // ============================================
-// CD Jewel Case - Kutu (Kapak Sol Menteşeden Açılır)
+// CD Jewel Case - Kutu (PÜRÜZSÜZ KAPAK ANİMASYONU)
 // ============================================
 function JewelCase({
   coverUrl,
@@ -144,21 +156,24 @@ function JewelCase({
   onDiscClick: () => void;
 }) {
   const coverRef = useRef<THREE.Group>(null);
-  const texture = useMemo(() => {
-    const loader = new THREE.TextureLoader();
-    const tex = loader.load(coverUrl);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }, [coverUrl]);
+  const texture = useLoader(THREE.TextureLoader, coverUrl);
+  
+  useEffect(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }, [texture]);
 
   const targetAngle = isOpen ? -Math.PI * 0.66 : 0; // 120 derece
 
-  useFrame((_, delta) => {
+  // PÜRÜZSÜZ ANİMASYON - lerp ile 60 FPS
+  useFrame((state, delta) => {
     if (coverRef.current) {
       const current = coverRef.current.rotation.y;
-      const diff = targetAngle - current;
-      // Yumuşak animasyon
-      coverRef.current.rotation.y += diff * delta * 3;
+      // THREE.MathUtils.lerp ile kaymak gibi pürüzsüz geçiş
+      coverRef.current.rotation.y = THREE.MathUtils.lerp(
+        current,
+        targetAngle,
+        delta * 6 // 6 = animasyon hızı (yüksek = hızlı)
+      );
     }
   });
 
@@ -262,6 +277,9 @@ function Scene({
 
   return (
     <>
+      {/* Texture Preloader - Modal açıldığında önceden yükle */}
+      <TexturePreloader coverUrl={track.coverUrl} />
+
       {/* Işıklandırma */}
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 5, 5]} intensity={1} />
