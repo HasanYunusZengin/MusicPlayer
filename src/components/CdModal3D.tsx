@@ -38,7 +38,7 @@ function useAlbumTexture(coverUrl: string): THREE.Texture {
 }
 
 // ============================================
-// CD Disc - 3D Dönen Disk
+// CD Disc - 3D Dönen Disk (DİKEY)
 // ============================================
 function CdDisc({
   coverUrl,
@@ -77,7 +77,7 @@ function CdDisc({
       const ns = s + (ts - s) * delta * 4;
       groupRef.current.scale.setScalar(ns);
     }
-    // Disk yavaşça döner (sadece focused modda belirgin)
+    // Disk yavaşça döner (sadece focused modda belirgin) - Z ekseni etrafında
     if (discGroupRef.current && isFocused) {
       discGroupRef.current.rotation.z += delta * 0.3;
     }
@@ -92,9 +92,9 @@ function CdDisc({
           onClick?.();
         }}
       >
-        {/* CD Body */}
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[1.1, 1.1, 0.02, 64]} />
+        {/* CD Body - DİKEY (rotation=[0,0,0]) */}
+        <mesh rotation={[0, 0, 0]}>
+          <cylinderGeometry args={[0.6, 0.6, 0.01, 64]} />
           <meshPhysicalMaterial
             color="#d0d0d0"
             metalness={0.95}
@@ -105,35 +105,22 @@ function CdDisc({
           />
         </mesh>
 
-        {/* CD Label (Album Art) - Top face */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
-          <ringGeometry args={[0.18, 1.05, 64]} />
+        {/* CD Label (Album Art) - Front face (dikey yüzey) */}
+        <mesh rotation={[0, 0, 0]} position={[0, 0, 0.006]}>
+          <ringGeometry args={[0.1, 0.58, 64]} />
           <meshStandardMaterial map={texture} side={THREE.FrontSide} />
         </mesh>
 
-        {/* CD Label - Bottom face */}
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.012, 0]}>
-          <ringGeometry args={[0.18, 1.05, 64]} />
+        {/* CD Label - Back face */}
+        <mesh rotation={[0, Math.PI, 0]} position={[0, 0, -0.006]}>
+          <ringGeometry args={[0.1, 0.58, 64]} />
           <meshStandardMaterial map={texture} side={THREE.FrontSide} />
         </mesh>
 
-        {/* Center hole ring */}
+        {/* Center hole ring - Dikey */}
         <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.15, 0.025, 16, 32]} />
+          <torusGeometry args={[0.08, 0.015, 16, 32]} />
           <meshStandardMaterial color="#888" metalness={0.9} roughness={0.1} />
-        </mesh>
-
-        {/* Iridescent ring effect */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.013, 0]}>
-          <ringGeometry args={[0.2, 0.4, 64]} />
-          <meshPhysicalMaterial
-            color="#a78bfa"
-            metalness={0.8}
-            roughness={0.2}
-            transparent
-            opacity={0.3}
-            clearcoat={1}
-          />
         </mesh>
       </group>
     </group>
@@ -245,7 +232,7 @@ function JewelCase({
 
       {/* CD Tray */}
       <mesh position={[0, 0, 0]}>
-        <cylinderGeometry args={[1.15, 1.15, 0.02, 64]} />
+        <cylinderGeometry args={[0.62, 0.62, 0.02, 64]} />
         <meshStandardMaterial
           color="#222"
           metalness={0.5}
@@ -257,7 +244,7 @@ function JewelCase({
 
       {/* Center spindle */}
       <mesh position={[0, 0, 0.02]}>
-        <cylinderGeometry args={[0.1, 0.1, 0.08, 32]} />
+        <cylinderGeometry args={[0.05, 0.05, 0.08, 32]} />
         <meshStandardMaterial
           color="#444"
           metalness={0.8}
@@ -481,7 +468,7 @@ export default function CdModal3D({ track, onClose }: CdModal3DProps) {
         <div className="flex-1 w-full h-full">
           <Suspense fallback={<LoadingOverlay />}>
             <Canvas
-              camera={{ position: [0, 0, 5], fov: 50 }}
+              camera={{ position: [0, 0, 7], fov: 50 }}
               gl={{ antialias: true, alpha: true }}
               style={{ background: 'transparent' }}
             >
