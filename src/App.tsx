@@ -2,7 +2,7 @@
 // App.tsx - Ana Uygulama Bileşeni
 // ============================================
 // Yourplayer - 3D CD Media Player
-// Sadeleştirilmiş: Tek playlist, tema sistemi
+// Playlist yönetimi, tema sistemi
 // ============================================
 
 import { useState, useCallback, useEffect } from 'react';
@@ -10,7 +10,8 @@ import type { Track } from './types';
 import { downloadTrack } from './services/downloadService';
 import TrackList from './components/TrackList';
 import CdModal3D from './components/CdModal3D';
-import Sidebar, { type Theme } from './components/Sidebar';
+import Sidebar, { type Theme, type Playlist } from './components/Sidebar';
+import { v4 as uuidv4 } from 'uuid';
 
 // Demo şarkılar
 const DEMO_TRACKS: Track[] = [
@@ -71,6 +72,11 @@ const DEMO_TRACKS: Track[] = [
   },
 ];
 
+// Varsayılan playlist
+const DEFAULT_PLAYLISTS: Playlist[] = [
+  { id: 'playlist-1', name: '1. Playlist' },
+];
+
 // Tema renk paletleri
 const THEME_STYLES: Record<Theme, { bg: string; accent: string }> = {
   dark: {
@@ -88,14 +94,22 @@ const THEME_STYLES: Record<Theme, { bg: string; accent: string }> = {
 };
 
 export default function App() {
-  const [tracks, setTracks] = useState<Track[]>(DEMO_TRACKS);
+  // Playlist state - her playlist için ayrı track listesi
+  const [playlists, setPlaylists] = useState<Playlist[]>(DEFAULT_PLAYLISTS);
+  const [tracksByPlaylist, setTracksByPlaylist] = useState<Record<string, Track[]>>({
+    'playlist-1': DEMO_TRACKS,
+  });
+  const [activePlaylist, setActivePlaylist] = useState('playlist-1');
+  
   const [inputValue, setInputValue] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [currentTheme, setCurrentTheme] = useState<Theme>('dark');
-  const [activePlaylist] = useState('playlist-1'); // Tek playlist, her zaman seçili
+
+  // Aktif playlist'in track'leri
+  const tracks = tracksByPlaylist[activePlaylist] || [];
 
   const themeStyle = THEME_STYLES[currentTheme];
   const isLight = currentTheme === 'light';
@@ -121,7 +135,11 @@ export default function App() {
       });
 
       if (result.success && result.track) {
-        setTracks((prev) => [result.track!, ...prev]);
+        // Şarkıyı aktif playlist'e ekle
+        setTracksByPlaylist((prev) => ({
+          ...prev,
+          [activePlaylist]: [result.track!, ...(prev[activePlaylist] || [])],
+        }));
         setInputValue('');
         showNotification(`"${result.track.title}" başarıyla indirildi!`, 'success');
       } else {
@@ -133,16 +151,19 @@ export default function App() {
       setIsDownloading(false);
       setDownloadProgress(0);
     }
-  }, [inputValue, showNotification]);
+  }, [inputValue, activePlaylist, showNotification]);
 
   const handleInspect = useCallback((track: Track) => {
     setSelectedTrack(track);
   }, []);
 
   const handleDelete = useCallback((trackId: string) => {
-    setTracks((prev) => prev.filter((t) => t.id !== trackId));
+    setTracksByPlaylist((prev) => ({
+      ...prev,
+      [activePlaylist]: (prev[activePlaylist] || []).filter((t) => t.id !== trackId),
+    }));
     showNotification('Şarkı koleksiyondan kaldırıldı.', 'success');
-  }, [showNotification]);
+  }, [activePlaylist, showNotification]);
 
   const handleCloseModal = useCallback(() => {
     setSelectedTrack(null);
@@ -169,9 +190,43 @@ export default function App() {
     setCurrentTheme(theme);
   }, []);
 
-  const handlePlaylistSelect = useCallback((_playlistId: string) => {
-    // Tek playlist olduğu için no-op, ama ileride genişletilebilir
+  const handlePlaylistSelect = useCallback((playlistId: string) => {
+    setActivePlaylist(playlistId);
   }, []);
+
+  const handlePlaylistAdd = useCallback((name: string) => {
+    const newPlaylist: Playlist = {
+      id: `playlist-${uuidv4().substring(0, 8)}`,
+      name: name,
+    };
+    setPlaylists((prev) => [...prev, newPlaylist]);
+    setTracksByPlaylist((prev) => ({
+      ...prev,
+      [newPlaylist.id]: [],
+    }));
+    setActivePlaylist(newPlaylist.id);
+    showNotification(`"${name}" playlist'i oluşturuldu.`, 'success');
+  }, [showNotification]);
+
+  const handlePlaylistDelete = useCallback((playlistId: string) => {
+    const playlistToDelete = playlists.find((p) => p.id === playlistId);
+    setPlaylists((prev) => prev.filter((p) => p.id !== playlistId));
+    setTracksByPlaylist((prev) => {
+      const newTracks = { ...prev };
+      delete newTracks[playlistId];
+      return newTracks;
+    });
+    // Eğer silinen playlist aktifse, ilk playlist'e geç
+    if (activePlaylist === playlistId) {
+      setActivePlaylist(playlists[0]?.id || 'playlist-1');
+    }
+    if (playlistToDelete) {
+      showNotification(`"${playlistToDelete.name}" playlist'i silindi.`, 'success');
+    }
+  }, [playlists, activePlaylist, showNotification]);
+
+  // Aktif playlist adı
+  const activePlaylistName = playlists.find((p) => p.id === activePlaylist)?.name || 'Playlist';
 
   return (
     <div className={`h-screen w-screen flex overflow-hidden ${themeStyle.bg} ${isLight ? 'text-gray-900' : 'text-white'} transition-colors duration-500`}>
@@ -190,8 +245,11 @@ export default function App() {
       <Sidebar
         currentTheme={currentTheme}
         onThemeChange={handleThemeChange}
+        playlists={playlists}
         activePlaylist={activePlaylist}
         onPlaylistSelect={handlePlaylistSelect}
+        onPlaylistAdd={handlePlaylistAdd}
+        onPlaylistDelete={handlePlaylistDelete}
       />
 
       {/* Main Content Area */}
@@ -274,7 +332,7 @@ export default function App() {
           <div className="max-w-5xl mx-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className={`text-sm font-semibold uppercase tracking-wider ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
-                1. Playlist
+                {activePlaylistName}
               </h2>
               {tracks.length > 0 && (
                 <span className={`text-xs ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
