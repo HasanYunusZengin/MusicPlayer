@@ -5,10 +5,10 @@
 //   Aşama 1 (closed/open): CD Kutusu görünür, 360° döndürülebilir
 //   Aşama 2 (focused): Sadece CD diski görünür, bağımsız döndürülebilir
 //
-// Performans Optimizasyonları:
+// Performans:
 //   - Texture preloading (modal açıldığında önceden yükle)
-//   - Smooth kapak animasyonu (lerp ile 60 FPS)
-//   - CD ortasında gerçek şeffaf delik (RingGeometry)
+//   - Smooth kapak animasyonu (lerp delta * 8 ile 60 FPS)
+//   - Tek parça CD geometrisi (RingGeometry, ortası şeffaf delik)
 
 import { useRef, useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
@@ -24,10 +24,9 @@ interface CdModal3DProps {
 type ViewMode = 'closed' | 'open' | 'focused';
 
 // ============================================
-// Texture Preloader - Modal açıldığında tüm texture'ları yükle
+// Texture Preloader - Modal açıldığında önceden yükle
 // ============================================
 function TexturePreloader({ coverUrl }: { coverUrl: string }) {
-  // useLoader ile texture'ı önceden yükle (Suspense ile senkron)
   const texture = useLoader(THREE.TextureLoader, coverUrl);
   
   useEffect(() => {
@@ -35,7 +34,7 @@ function TexturePreloader({ coverUrl }: { coverUrl: string }) {
     texture.needsUpdate = true;
   }, [texture]);
 
-  return null; // Render etme, sadece yükle
+  return null;
 }
 
 // ============================================
@@ -69,10 +68,10 @@ function useCircularCdTexture(coverUrl: string): THREE.Texture {
       ctx.drawImage(img, sx, sy, size, size, 0, 0, 512, 512);
     }
 
-    // Merkez delik (şeffaf) - CD standartlarına uygun
+    // Merkez delik (şeffaf) - 0.35 birime karşılık
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(256, 256, 50, 0, Math.PI * 2);
+    ctx.arc(256, 256, 45, 0, Math.PI * 2);
     ctx.fill();
 
     const texture = new THREE.CanvasTexture(canvas);
@@ -83,7 +82,7 @@ function useCircularCdTexture(coverUrl: string): THREE.Texture {
 }
 
 // ============================================
-// CD Disc - 3D Disk (ORTASI DELİK, DİKEY)
+// CD Disc - TEK PARÇA (RingGeometry, ortası şeffaf delik)
 // ============================================
 function CdDisc({
   coverUrl,
@@ -104,35 +103,12 @@ function CdDisc({
           onClick?.();
         }}
       >
-        {/* CD Body - RingGeometry ile ortası delik */}
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.15, 1.2, 64]} />
-          <meshPhysicalMaterial
-            color="#d0d0d0"
-            metalness={0.9}
-            roughness={0.1}
-            clearcoat={0.8}
-            clearcoatRoughness={0.1}
+        {/* TEK MESH - RingGeometry (XY düzleminde, ortası delik) */}
+        <mesh rotation={[0, 0, 0]}>
+          <ringGeometry args={[0.35, 2, 64]} />
+          <meshStandardMaterial
+            map={circularTexture}
             side={THREE.DoubleSide}
-          />
-        </mesh>
-
-        {/* CD Label - Ön yüz (dairesel texture, ortası delik) */}
-        <mesh position={[0, 0, 0.011]}>
-          <ringGeometry args={[0.15, 1.15, 64]} />
-          <meshStandardMaterial
-            map={circularTexture}
-            side={THREE.FrontSide}
-            transparent
-          />
-        </mesh>
-
-        {/* CD Label - Arka yüz */}
-        <mesh rotation={[0, Math.PI, 0]} position={[0, 0, -0.011]}>
-          <ringGeometry args={[0.15, 1.15, 64]} />
-          <meshStandardMaterial
-            map={circularTexture}
-            side={THREE.FrontSide}
             transparent
           />
         </mesh>
@@ -164,15 +140,14 @@ function JewelCase({
 
   const targetAngle = isOpen ? -Math.PI * 0.66 : 0; // 120 derece
 
-  // PÜRÜZSÜZ ANİMASYON - lerp ile 60 FPS
+  // PÜRÜZSÜZ ANİMASYON - lerp delta * 8 ile 60 FPS
   useFrame((state, delta) => {
     if (coverRef.current) {
       const current = coverRef.current.rotation.y;
-      // THREE.MathUtils.lerp ile kaymak gibi pürüzsüz geçiş
       coverRef.current.rotation.y = THREE.MathUtils.lerp(
         current,
         targetAngle,
-        delta * 6 // 6 = animasyon hızı (yüksek = hızlı)
+        delta * 8 // 8 = hızlı ve pürüzsüz animasyon
       );
     }
   });
@@ -302,7 +277,7 @@ function Scene({
         />
       )}
 
-      {/* OrbitControls - Her zaman aktif, auto-rotate YOK */}
+      {/* OrbitControls - Zoom aktif, auto-rotate YOK */}
       <OrbitControls
         enablePan={false}
         enableZoom={true}
@@ -441,7 +416,7 @@ export default function CdModal3D({ track, onClose }: CdModal3DProps) {
         <div className="flex-1 w-full h-full">
           <Suspense fallback={<LoadingOverlay />}>
             <Canvas
-              camera={{ position: [0, 0, 8], fov: 50 }}
+              camera={{ position: [0, 0, 7], fov: 50 }}
               gl={{ antialias: true, alpha: true }}
               style={{ background: 'transparent' }}
             >
